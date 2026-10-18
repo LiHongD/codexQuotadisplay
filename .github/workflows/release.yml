@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: windows-release
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   release:
@@ -28,6 +28,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Download and verify the official runtime
+        shell: pwsh
         run: ./packaging/download-runtime.ps1
       - name: Build Windows installer and portable package
         run: ./build.ps1
