@@ -86,7 +86,7 @@ internal static class VerifyCompact
                 Field("collapseAfter").SetValue(widget, DateTime.UtcNow.AddSeconds(-1));
                 Call(widget, "DockTick");
                 Check((bool)Field("dockCollapsed").GetValue(widget), "leaving the expanded orb begins collapse after the delay");
-                System.Threading.Thread.Sleep(220); Call(widget, "DockTick");
+                System.Threading.Thread.Sleep(400); Call(widget, "DockTick");
                 Check(widget.Width == 68 && !(bool)Field("geometryActive").GetValue(widget), "collapse animation settles exactly at miniature size");
                 Call(widget, "DetachDock"); Check(widget.Width == 176 && Field("dockSide").GetValue(widget).ToString() == "None", "dragging away can restore normal size");
                 for (int layout = 0; layout < 5; layout++) {

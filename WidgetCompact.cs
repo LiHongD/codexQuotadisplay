@@ -14,7 +14,7 @@ public sealed partial class CodexUsageWidgetV2
     private int layerPalette = -1, layerMaterial = -1, layerA, layerB;
     private enum DockSide { None, Left, Right, Top, Bottom }
     private DockSide dockSide;
-    private bool autoDock = true, dockCollapsed, maskIsOrb, pointerDown, pointerMoved, geometryActive, hoverReady;
+    private bool autoDock = true, dockCollapsed, maskIsOrb, pointerDown, pointerMoved, geometryActive, geometryApplying, hoverReady;
     private int orbWidth = 176, panelWidth = 280, dockSize = 68;
     private double dockFraction = .5;
     private string dockMonitor = "";
@@ -22,6 +22,7 @@ public sealed partial class CodexUsageWidgetV2
     private readonly ToolTip hint = new ToolTip();
     private readonly Stopwatch geometryClock = new Stopwatch();
     private Rectangle geometryFrom, geometryTo;
+    private double geometryDuration = 340;
     private DateTime collapseAfter, hoverAfter;
     private bool OrbSurface { get { return mode == 5 || dockCollapsed; } }
     protected override bool ShowWithoutActivation { get { return true; } }
@@ -89,7 +90,8 @@ public sealed partial class CodexUsageWidgetV2
     private void PointerDown(object sender, MouseEventArgs e)
     {
         if (e.Button != MouseButtons.Left) return;
-        if (geometryActive) { geometryActive = false; Bounds = geometryTo; }
+        // Catch the ball where it is, without jumping to the animation's endpoint.
+        if (geometryActive) { geometryActive = false; geometryClock.Stop(); dockTimer.Interval = 30; }
         pointerDown = true; pointerMoved = false;
         dragAt = Cursor.Position; originalAt = Location; originalSize = ExpandedSize();
         resizing = ResizeHit(e.Location); dragging = !resizing;
@@ -121,7 +123,10 @@ public sealed partial class CodexUsageWidgetV2
         if (!pointerDown || e.Button != MouseButtons.Left) return;
         bool moved = pointerMoved;
         pointerDown = dragging = resizing = false; pointerMoved = false; Capture = false; hint.Active = true;
-        if (!moved) return;
+        if (!moved) {
+            if (dockSide != DockSide.None) SetDockCollapsed(dockCollapsed, true);
+            return;
+        }
         if (!autoDock || !TryDock()) ClampToScreen();
         SaveSettings(); Redraw();
     }
@@ -169,28 +174,33 @@ public sealed partial class CodexUsageWidgetV2
     {
         dockCollapsed = collapsed;
         Rectangle target = DockBounds(collapsed ? new Size(dockSize, dockSize) : ExpandedSize());
-        if (!smooth) { geometryActive = false; Bounds = target; Redraw(); return; }
+        if (!smooth || Bounds == target) {
+            geometryActive = false; geometryClock.Reset(); dockTimer.Interval = 30;
+            geometryApplying = true;
+            try { Bounds = target; } finally { geometryApplying = false; }
+            Redraw(); return;
+        }
         geometryFrom = Bounds; geometryTo = target; geometryActive = true; geometryClock.Restart();
+        double distance = Math.Max(Math.Abs(target.Width - Width), Math.Abs(target.Height - Height));
+        double fullTravel = Math.Max(1, ExpandedSize().Width - dockSize);
+        geometryDuration = Math.Max(180, (collapsed ? 360 : 320) * Math.Sqrt(Math.Min(1, distance / fullTravel)));
+        dockTimer.Interval = 15;
     }
     private void DetachDock()
     {
-        geometryActive = false; dockSide = DockSide.None; dockCollapsed = false;
+        geometryActive = false; geometryClock.Reset(); dockTimer.Interval = 30;
+        dockSide = DockSide.None; dockCollapsed = false;
         ClientSize = ExpandedSize(); maskSize = Size.Empty;
     }
     private void DockTick()
     {
         if (IsDisposed) return;
         if (geometryActive) {
-            double fraction = Math.Min(1, geometryClock.Elapsed.TotalMilliseconds / 190);
-            double ease = 1 - Math.Pow(1 - fraction, 3);
-            Rectangle next = new Rectangle(
-                (int)Math.Round(geometryFrom.X + (geometryTo.X - geometryFrom.X) * ease),
-                (int)Math.Round(geometryFrom.Y + (geometryTo.Y - geometryFrom.Y) * ease),
-                (int)Math.Round(geometryFrom.Width + (geometryTo.Width - geometryFrom.Width) * ease),
-                (int)Math.Round(geometryFrom.Height + (geometryTo.Height - geometryFrom.Height) * ease));
-            Bounds = next;
-            if (fraction >= 1) { geometryActive = false; geometryClock.Stop(); }
-            Redraw(); return;
+            if (dockCollapsed && hoverReady && DateTime.UtcNow >= hoverAfter && Bounds.Contains(Cursor.Position))
+                SetDockCollapsed(false, true);
+            AdvanceMotion();
+            ApplyDockFrame(geometryClock.Elapsed.TotalMilliseconds);
+            return;
         }
         if (!autoDock || dockSide == DockSide.None || pointerDown || ContextMenuStrip.Visible) return;
         bool inside = Bounds.Contains(Cursor.Position);
@@ -201,6 +211,26 @@ public sealed partial class CodexUsageWidgetV2
             }
         } else if (inside) collapseAfter = DateTime.UtcNow.AddMilliseconds(650);
         else if (DateTime.UtcNow >= collapseAfter) { hoverReady = true; SetDockCollapsed(true, true); }
+    }
+    private static Rectangle DockAnimationBounds(Rectangle from, Rectangle to, double progress)
+    {
+        double t = Math.Max(0, Math.Min(1, progress));
+        // Quintic easing has zero velocity and acceleration at both ends.
+        double ease = t * t * t * (t * (t * 6 - 15) + 10);
+        int width = (int)Math.Round(from.Width + (to.Width - from.Width) * ease);
+        int height = (int)Math.Round(from.Height + (to.Height - from.Height) * ease);
+        int x = from.Right == to.Right ? to.Right - width : (int)Math.Round(from.Left + (to.Left - from.Left) * ease);
+        int y = from.Bottom == to.Bottom ? to.Bottom - height : (int)Math.Round(from.Top + (to.Top - from.Top) * ease);
+        return new Rectangle(x, y, width, height);
+    }
+    private void ApplyDockFrame(double elapsedMilliseconds)
+    {
+        double progress = Math.Min(1, elapsedMilliseconds / geometryDuration);
+        geometryApplying = true;
+        try { Bounds = DockAnimationBounds(geometryFrom, geometryTo, progress); }
+        finally { geometryApplying = false; }
+        if (progress >= 1) { geometryActive = false; geometryClock.Stop(); dockTimer.Interval = 30; }
+        Redraw();
     }
     private void ChangeCompactMode(int selected)
     {
@@ -308,16 +338,16 @@ public sealed partial class CodexUsageWidgetV2
     {
         // Supersample all curved artwork, including clipped water and arc caps.
         // Text is composited at native resolution afterwards so small numerals stay crisp.
-        int samples = Width <= 100 ? 4 : 3;
+        Size artworkSize = OrbArtworkSize();
         Bitmap image = new Bitmap(Width, Height, PixelFormat.Format32bppPArgb);
-        using (Bitmap artwork = new Bitmap(Width * samples, Height * samples, PixelFormat.Format32bppPArgb)) {
+        using (Bitmap artwork = new Bitmap(artworkSize.Width, artworkSize.Height, PixelFormat.Format32bppPArgb)) {
             using (Graphics g = Graphics.FromImage(artwork)) {
                 g.Clear(Color.Transparent);
                 g.SmoothingMode = SmoothingMode.HighQuality;
                 g.CompositingQuality = CompositingQuality.HighQuality;
                 g.PixelOffsetMode = PixelOffsetMode.HighQuality;
                 g.InterpolationMode = InterpolationMode.HighQualityBicubic;
-                g.ScaleTransform(UiScale * samples, UiScaleY * samples);
+                g.ScaleTransform(artworkSize.Width / 180F, artworkSize.Height / 180F);
                 using (GraphicsPath outline = CardOutline()) g.SetClip(outline);
                 PaintEnergyOrbArtwork(g);
             }
@@ -368,14 +398,23 @@ public sealed partial class CodexUsageWidgetV2
     }
     private void EnsureScaledOrbLayers()
     {
-        int samples = Width <= 100 ? 4 : 3;
-        Size target = new Size(Width * samples, Height * samples);
+        Size target = OrbArtworkSize();
         if (target == orbLayerSize && orbScaledUnderlay != null) return;
         if (orbScaledUnderlay != null) orbScaledUnderlay.Dispose();
         if (orbScaledGlaze != null) orbScaledGlaze.Dispose();
         orbScaledUnderlay = ScaleOrbLayer(orbUnderlay, target);
         orbScaledGlaze = ScaleOrbLayer(orbGlaze, target);
         orbLayerSize = target;
+    }
+    private Size OrbArtworkSize()
+    {
+        if (geometryActive && mode == 5) {
+            // Keep one supersampled glass size throughout the transition.
+            int edge = Math.Max(Math.Max(geometryFrom.Width, geometryFrom.Height), Math.Max(geometryTo.Width, geometryTo.Height));
+            return new Size(edge * 3, edge * 3);
+        }
+        int samples = Width <= 100 ? 4 : 3;
+        return new Size(Width * samples, Height * samples);
     }
     private static Bitmap ScaleOrbLayer(Bitmap source, Size target)
     {

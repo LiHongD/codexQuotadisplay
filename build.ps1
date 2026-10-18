@@ -2,7 +2,7 @@
 $ErrorActionPreference = 'Stop'
 $project = $PSScriptRoot
 $build = Join-Path $project '.build'
-$portable = Join-Path $project 'dist\CodexUsageWidget-1.2.0-win-x64'
+$portable = Join-Path $project 'dist\CodexUsageWidget-1.2.1-win-x64'
 $distribution = Join-Path $project 'dist'
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 $native = Join-Path $build 'downloads\0.163.0-win32-x64\package\vendor\x86_64-pc-windows-msvc\bin\codex.exe'
@@ -52,10 +52,10 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = Join-Path $build 'WidgetPayload.zip'
 if (Test-Path -LiteralPath $archive) { Remove-Item -LiteralPath $archive }
 [IO.Compression.ZipFile]::CreateFromDirectory($portable,$archive,[IO.Compression.CompressionLevel]::Optimal,$false)
-$setup = Join-Path $distribution 'CodexUsageWidget-Setup-1.2.0-win-x64.exe'
+$setup = Join-Path $distribution 'CodexUsageWidget-Setup-1.2.1-win-x64.exe'
 & $compiler @shared ('/out:'+$setup) '/reference:System.IO.Compression.dll' '/reference:System.IO.Compression.FileSystem.dll' ('/resource:'+$archive+',WidgetPayload.zip') (Join-Path $project 'packaging\InstallCommon.cs') (Join-Path $project 'packaging\Setup.cs') (Join-Path $project 'packaging\AssemblyInfo.cs')
 if ($LASTEXITCODE -ne 0) { throw 'Installer compilation failed.' }
-$zip = Join-Path $distribution 'CodexUsageWidget-Portable-1.2.0-win-x64.zip'
+$zip = Join-Path $distribution 'CodexUsageWidget-Portable-1.2.1-win-x64.zip'
 Copy-Item -LiteralPath $archive -Destination $zip -Force
 $hashes = foreach ($file in @($setup,$zip)) { '{0}  {1}' -f (Get-FileHash -LiteralPath $file -Algorithm SHA256).Hash.ToLowerInvariant(),[IO.Path]::GetFileName($file) }
 [IO.File]::WriteAllLines((Join-Path $distribution 'SHA256SUMS.txt'),$hashes,[Text.Encoding]::ASCII)

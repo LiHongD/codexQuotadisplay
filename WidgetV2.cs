@@ -72,6 +72,8 @@ public sealed partial class CodexUsageWidgetV2 : Form
     private int mode = 5, palette = 1, material, animationStyle = 6;
     private float animationSpeed = 1;
     private float phase;
+    private readonly Stopwatch motionClock = Stopwatch.StartNew();
+    private double lastMotionSeconds;
     private Color customAccent = Hex("#64D9C5");
     private Point dragAt, originalAt;
     private Size originalSize;
@@ -118,11 +120,14 @@ public sealed partial class CodexUsageWidgetV2 : Form
         TopMost = true;
         LoadSettings();
         BackColor = Colors.Bg;
-        Resize += (s, e) => Redraw();
+        Resize += (s, e) => { if (!geometryApplying) Redraw(); };
         InitializeCompactInteraction();
         pollTimer.Interval = 60000; pollTimer.Tick += (s, e) => RefreshUsage(); pollTimer.Start();
-        clockTimer.Interval = 1000; clockTimer.Tick += (s, e) => { if (!MotionActive) Redraw(); }; clockTimer.Start();
-        motionTimer.Interval = 40; motionTimer.Tick += (s, e) => { if (MotionActive && Visible) { phase = (phase + .042F * animationSpeed) % (2F * (float)Math.PI); Redraw(); } };
+        clockTimer.Interval = 1000; clockTimer.Tick += (s, e) => { if (!MotionActive && !geometryActive) Redraw(); }; clockTimer.Start();
+        motionTimer.Interval = 40; motionTimer.Tick += (s, e) => {
+            AdvanceMotion();
+            if (MotionActive && Visible && !geometryActive) Redraw();
+        };
         motionTimer.Start();
         Shown += (s, e) => { Redraw(); RefreshUsage(); };
     }
@@ -134,6 +139,12 @@ public sealed partial class CodexUsageWidgetV2 : Form
         ClientSize = ExpandedSize();
     }
     private bool MotionActive { get { return animate && animationStyle > 0; } }
+    private void AdvanceMotion()
+    {
+        double now = motionClock.Elapsed.TotalSeconds, elapsed = now - lastMotionSeconds;
+        lastMotionSeconds = now;
+        if (MotionActive && Visible) phase = (phase + (float)(elapsed * 1.05 * animationSpeed)) % (2F * (float)Math.PI);
+    }
     private bool CanRetry(float x, float y) { return !busy && quotaState != QuotaState.Connected && x >= 100 && x <= 260 && y >= 181 && y <= 216; }
     private GraphicsPath CardOutline() {
         if (!OrbSurface) return Round(new RectangleF(0, 0, 360, 176), 16);
@@ -268,7 +279,7 @@ public sealed partial class CodexUsageWidgetV2 : Form
     protected override void OnPaint(PaintEventArgs e) { /* The compositor retains the layered bitmap. */ }
     private void Redraw()
     {
-        if (!IsHandleCreated || IsDisposed || presenting || Width <= 0 || Height <= 0) return;
+        if (!IsHandleCreated || IsDisposed || presenting || geometryApplying || Width <= 0 || Height <= 0) return;
         presenting = true;
         try {
             using (Bitmap image = CreateFrame()) {

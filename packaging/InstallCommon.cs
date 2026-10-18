@@ -6,7 +6,7 @@ using Microsoft.Win32;
 
 internal static class InstallCommon
 {
-    public const string Product = "Codex 用量挂件", Version = "1.2.0", Marker = "CodexUsageWidget/1.0";
+    public const string Product = "Codex 用量挂件", Version = "1.2.1", Marker = "CodexUsageWidget/1.0";
     public const string Executable = "CodexQuotaWidget.exe";
     public const string RegistryPath = @"Software\Microsoft\Windows\CurrentVersion\Uninstall\CodexUsageWidget";
     public static readonly string[] Files = {
