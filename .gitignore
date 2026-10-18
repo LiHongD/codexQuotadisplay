@@ -1,0 +1,25 @@
+# Generated runtime, installers and local diagnostics
+/.build/
+/dist/
+*.exe
+*.pdb
+*.log
+*.tmp
+
+# Local preferences and account data must never be committed
+settings.json
+settings-context
+auth.json
+config.toml
+.env
+.env.*
+.codex/
+runtime/
+
+# Publish only the curated, synthetic preview images below
+/previews/*
+!/previews/energy-orb-koi-demo.gif
+!/previews/energy-orb-koi.png
+!/previews/energy-orb-3d-demo.gif
+!/previews/liquid-water.gif
+!/previews/installer.png
